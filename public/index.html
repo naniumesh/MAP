@@ -1,189 +1,498 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>NearMe</title>
-<link rel="icon" href="data:,">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap">
-<style>
-  /* Layout: map fills the top, three category rails below; gate overlay sits above everything until location is granted */
-  :root {
-    --bg: #f6f3ec; --fg: #1d1a14; --muted: #6d6555; --card: #ffffff; --line: #e3dccd;
-    --accent: #c0541f; --accent-ink: #ffffff; --food: #c0541f; --shop: #2d6a8f; --hotel: #5f6e2f;
-    --display: "Fraunces", Georgia, serif; --body: "Manrope", system-ui, sans-serif;
-  }
-  @media (prefers-color-scheme: dark) { :root { --bg:#17150f; --fg:#f1ece0; --muted:#a39a86; --card:#221f18; --line:#35302a; --accent:#e5753d; color-scheme: dark; } }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5; }
-  h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; }
-  button { font: inherit; cursor: pointer; }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NearMe</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap">
+  <style>
+    /* Layout: map fills the top, three category rails below; gate overlay sits above everything until location is granted */
+    :root {
+      --bg: #f6f3ec;
+      --fg: #1d1a14;
+      --muted: #6d6555;
+      --card: #ffffff;
+      --line: #e3dccd;
+      --accent: #c0541f;
+      --accent-ink: #ffffff;
+      --food: #c0541f;
+      --shop: #2d6a8f;
+      --hotel: #5f6e2f;
+      --display: "Fraunces", Georgia, serif;
+      --body: "Manrope", system-ui, sans-serif;
+    }
 
-  /* Gate */
-  #gate { position: fixed; inset: 0; z-index: 2000; background: var(--bg); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-left,0px)); }
-  #gate .panel { max-width: 440px; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; text-align: center; }
-  #gate h1 { font-size: 2.1rem; line-height: 1.1; margin-bottom: 10px; }
-  #gate p { color: var(--muted); margin: 0 0 20px; }
-  .pin { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; margin: 0 auto 16px; font-size: 26px; }
-  .btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px; padding: 13px 22px; font-weight: 700; font-size: 1rem; width: 100%; }
-  .btn:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
-  .btn[disabled] { opacity: .6; cursor: wait; }
-  #gateErr { color: var(--accent); font-weight: 600; margin-top: 14px; display: none; }
-  .fine { font-size: .8rem; color: var(--muted); margin-top: 16px; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #17150f;
+        --fg: #f1ece0;
+        --muted: #a39a86;
+        --card: #221f18;
+        --line: #35302a;
+        --accent: #e5753d;
+        color-scheme: dark;
+      }
+    }
 
-  /* App */
-  #app { display: none; min-height: 100%; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px max(16px, env(safe-area-inset-right,0px)) 12px max(16px, env(safe-area-inset-left,0px)); border-bottom: 1px solid var(--line); background: var(--card); }
-  header h1 { font-size: 1.4rem; }
-  #where { color: var(--muted); font-size: .85rem; min-width: 0; text-align: right; }
-  #map { height: 46vh; min-height: 300px; width: 100%; }
-  main { padding: 16px max(16px, env(safe-area-inset-right,0px)) 32px max(16px, env(safe-area-inset-left,0px)); display: grid; gap: 22px; }
-  .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-  .tab { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 999px; padding: 8px 16px; font-weight: 600; }
-  .tab[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-  .tab[disabled] { opacity:.5; cursor:default; }
-  .section h2 { font-size: 1.35rem; margin-bottom: 4px; }
-  .section .sub { color: var(--muted); font-size: .85rem; margin: 0 0 12px; }
-  .list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-  .place { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 4px; min-width: 0; border-left: 4px solid var(--c); cursor: pointer; }
-  .place:hover { border-color: var(--c); }
-  .place .name { font-weight: 700; }
-  .place .meta { color: var(--muted); font-size: .85rem; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-  .place .dist { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--fg); }
-  .place a { color: var(--c); font-weight: 600; font-size: .85rem; text-decoration: none; }
-  .rank { font-size: .75rem; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
-  .toprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .rating { color: #d98324; font-weight: 700; font-size: .9rem; }
-  .rating .rev { color: var(--muted); font-weight: 500; }
-  .badge { font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
-  .badge.open { background: #e3f3e8; color: #1c6b3a; }
-  .badge.closed { background: #f6e3e3; color: #a33; }
-  @media (prefers-color-scheme: dark) { .badge.open { background: #173a26; color: #7fd6a0; } .badge.closed { background: #3a1d1d; color: #e79a9a; } }
-  .hours { font-size: .8rem; color: var(--muted); }
-  .empty { color: var(--muted); padding: 10px 0; }
-  .loading { color: var(--muted); }
-  .leaflet-popup-content { font-family: var(--body); }
-  @media (prefers-reduced-motion: no-preference) { .place { transition: border-color .15s; } }
-</style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--body);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: var(--display);
+      margin: 0;
+      text-wrap: balance;
+    }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+    }
+
+    /* Gate */
+    #gate {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: var(--bg);
+      display: grid;
+      place-items: center;
+      padding: max(16px, env(safe-area-inset-left, 0px));
+    }
+
+    #gate .panel {
+      max-width: 440px;
+      width: 100%;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 32px 28px;
+      text-align: center;
+    }
+
+    #gate h1 {
+      font-size: 2.1rem;
+      line-height: 1.1;
+      margin-bottom: 10px;
+    }
+
+    #gate p {
+      color: var(--muted);
+      margin: 0 0 20px;
+    }
+
+    .pin {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--accent-ink);
+      display: grid;
+      place-items: center;
+      margin: 0 auto 16px;
+      font-size: 26px;
+    }
+
+    .btn {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 22px;
+      font-weight: 700;
+      font-size: 1rem;
+      width: 100%;
+    }
+
+    .btn:focus-visible {
+      outline: 3px solid var(--fg);
+      outline-offset: 2px;
+    }
+
+    .btn[disabled] {
+      opacity: .6;
+      cursor: wait;
+    }
+
+    #gateErr {
+      color: var(--accent);
+      font-weight: 600;
+      margin-top: 14px;
+      display: none;
+    }
+
+    .fine {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-top: 16px;
+    }
+
+    /* App */
+    #app {
+      display: none;
+      min-height: 100%;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+    }
+
+    #where {
+      color: var(--muted);
+      font-size: .85rem;
+      min-width: 0;
+      text-align: right;
+    }
+
+    #map {
+      height: 46vh;
+      min-height: 300px;
+      width: 100%;
+    }
+
+    main {
+      padding: 16px max(16px, env(safe-area-inset-right, 0px)) 32px max(16px, env(safe-area-inset-left, 0px));
+      display: grid;
+      gap: 22px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tab {
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--fg);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-weight: 600;
+    }
+
+    .tab[aria-selected="true"] {
+      background: var(--fg);
+      color: var(--bg);
+      border-color: var(--fg);
+    }
+
+    .tab[disabled] {
+      opacity: .5;
+      cursor: default;
+    }
+
+    .section h2 {
+      font-size: 1.35rem;
+      margin-bottom: 4px;
+    }
+
+    .section .sub {
+      color: var(--muted);
+      font-size: .85rem;
+      margin: 0 0 12px;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+
+    .place {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      border-left: 4px solid var(--c);
+      cursor: pointer;
+    }
+
+    .place:hover {
+      border-color: var(--c);
+    }
+
+    .place .name {
+      font-weight: 700;
+    }
+
+    .place .meta {
+      color: var(--muted);
+      font-size: .85rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .place .dist {
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: var(--fg);
+    }
+
+    .place a {
+      color: var(--c);
+      font-weight: 600;
+      font-size: .85rem;
+      text-decoration: none;
+    }
+
+    .rank {
+      font-size: .75rem;
+      color: var(--muted);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .toprow {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .rating {
+      color: #d98324;
+      font-weight: 700;
+      font-size: .9rem;
+    }
+
+    .rating .rev {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .badge {
+      font-size: .7rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+
+    .badge.open {
+      background: #e3f3e8;
+      color: #1c6b3a;
+    }
+
+    .badge.closed {
+      background: #f6e3e3;
+      color: #a33;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .badge.open {
+        background: #173a26;
+        color: #7fd6a0;
+      }
+
+      .badge.closed {
+        background: #3a1d1d;
+        color: #e79a9a;
+      }
+    }
+
+    .hours {
+      font-size: .8rem;
+      color: var(--muted);
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 10px 0;
+    }
+
+    .loading {
+      color: var(--muted);
+    }
+
+    .leaflet-popup-content {
+      font-family: var(--body);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .place {
+        transition: border-color .15s;
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<div id="gate">
-  <div class="panel">
-    <div class="pin">📍</div>
-    <h1>Find the best around you</h1>
-    <p>NearMe shows the best food, shopping and hotels closest to where you are right now. No account, no form — just allow your location to enter.</p>
-    <button class="btn" id="allowBtn">Allow location &amp; enter</button>
-    <label class="fine" style="display:block"><input type="checkbox" id="saveVisit"> Also let the site administrator save this visit’s location, time and device information.</label>
-    <div id="gateErr"></div>
-    <p class="fine">Your location is used once to find nearby places. No continuous or background tracking.</p>
-  </div>
-</div>
-
-<div id="app">
-  <header>
-    <h1>NearMe <small style="font:12px var(--body);color:var(--muted)">v1.4</small></h1>
-    <div id="where">Locating…</div>
-  </header>
-  <div id="map"></div>
-  <main>
-    <div class="tabs" role="tablist">
-      <button class="tab" role="tab" aria-selected="true" data-tab="food">🍽 Food</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="shop">🛍 Shopping</button>
-      <button class="tab" role="tab" aria-selected="false" data-tab="hotel">🏨 Hotels</button>
+  <div id="gate">
+    <div class="panel">
+      <div class="pin">📍</div>
+      <h1>Find the best around you</h1>
+      <p>NearMe shows the best food, shopping and hotels closest to where you are right now. No account, no form — just
+        allow your location to enter.</p>
+      <button class="btn" id="allowBtn">Allow location &amp; enter</button>
+      <label class="fine" style="display:block"><input type="checkbox" id="saveVisit" checked>Allow to save Draft, when
+        open again which will show the recent view's</label>
+      <div id="gateErr"></div>
+      <p class="fine">Your location is used once to find nearby places. No continuous or background tracking.</p>
     </div>
-    <section class="section" id="sec-food"><h2>Best food near you</h2><p class="sub">Restaurants, cafés and fast food within 2 km, nearest first.</p><div class="list" id="list-food"><div class="loading">Searching…</div></div></section>
-    <section class="section" id="sec-shop" hidden><h2>Shopping near you</h2><p class="sub">Malls, supermarkets, markets and shops within 2 km.</p><div class="list" id="list-shop"><div class="loading">Searching…</div></div></section>
-    <section class="section" id="sec-hotel" hidden><h2>Hotels near you</h2><p class="sub">Hotels and guest houses within 3 km.</p><div class="list" id="list-hotel"><div class="loading">Searching…</div></div></section>
-  </main>
-</div>
+  </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-(() => {
-  const $ = (s) => document.querySelector(s);
-  const gate = $("#gate"), app = $("#app"), allowBtn = $("#allowBtn"), gateErr = $("#gateErr");
+  <div id="app">
+    <header>
+      <h1>NearMe <small style="font:12px var(--body);color:var(--muted)">v1.4</small></h1>
+      <div id="where">Locating…</div>
+    </header>
+    <div id="map"></div>
+    <main>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" data-tab="food">🍽 Food</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="shop">🛍 Shopping</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="hotel">🏨 Hotels</button>
+      </div>
+      <section class="section" id="sec-food">
+        <h2>Best food near you</h2>
+        <p class="sub">Restaurants, cafés and fast food within 2 km, nearest first.</p>
+        <div class="list" id="list-food">
+          <div class="loading">Searching…</div>
+        </div>
+      </section>
+      <section class="section" id="sec-shop" hidden>
+        <h2>Shopping near you</h2>
+        <p class="sub">Malls, supermarkets, markets and shops within 2 km.</p>
+        <div class="list" id="list-shop">
+          <div class="loading">Searching…</div>
+        </div>
+      </section>
+      <section class="section" id="sec-hotel" hidden>
+        <h2>Hotels near you</h2>
+        <p class="sub">Hotels and guest houses within 3 km.</p>
+        <div class="list" id="list-hotel">
+          <div class="loading">Searching…</div>
+        </div>
+      </section>
+    </main>
+  </div>
 
-  // A first-party random identifier, created only after optional visit-storage consent.
-  function deviceId() {
-    try {
-      const saved = localStorage.getItem('nearme_vid');
-      if (saved && /^[a-zA-Z0-9-]{1,64}$/.test(saved)) return saved;
-      const id = crypto.randomUUID();
-      localStorage.setItem('nearme_vid', id);
-      return id;
-    } catch { return crypto.randomUUID(); }
-  }
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    (() => {
+      const $ = (s) => document.querySelector(s);
+      const gate = $("#gate"), app = $("#app"), allowBtn = $("#allowBtn"), gateErr = $("#gateErr");
 
-  const CATS = {
-    food:  { color: "#c0541f" },
-    shop:  { color: "#2d6a8f" },
-    hotel: { color: "#5f6e2f" },
-  };
+      // A first-party random identifier, created only after optional visit-storage consent.
+      function deviceId() {
+        try {
+          const saved = localStorage.getItem('nearme_vid');
+          if (saved && /^[a-zA-Z0-9-]{1,64}$/.test(saved)) return saved;
+          const id = crypto.randomUUID();
+          localStorage.setItem('nearme_vid', id);
+          return id;
+        } catch { return crypto.randomUUID(); }
+      }
 
-  function showError(msg) { gateErr.textContent = msg; gateErr.style.display = "block"; allowBtn.disabled = false; allowBtn.textContent = "Try again"; }
+      const CATS = {
+        food: { color: "#c0541f" },
+        shop: { color: "#2d6a8f" },
+        hotel: { color: "#5f6e2f" },
+      };
 
-  allowBtn.addEventListener("click", () => {
-    if (!navigator.geolocation) return showError("This browser cannot share your location, so NearMe cannot open.");
-    if (!window.isSecureContext) return showError("Location only works over HTTPS (or localhost). Open the site with https://");
-    allowBtn.disabled = true; allowBtn.textContent = "Waiting for permission…";
-    navigator.geolocation.getCurrentPosition(onLocation, (err) => {
-      if (err.code === 1) showError("Location was blocked. NearMe cannot open without it — allow location in your browser settings and try again.");
-      else if (err.code === 3) showError("Finding your location took too long. Try again.");
-      else showError("Could not get your location. Try again.");
-    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
-  });
+      function showError(msg) { gateErr.textContent = msg; gateErr.style.display = "block"; allowBtn.disabled = false; allowBtn.textContent = "Try again"; }
 
-  async function onLocation(pos) {
-    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-    gate.style.display = "none"; app.style.display = "block";
+      allowBtn.addEventListener("click", () => {
+        if (!navigator.geolocation) return showError("This browser cannot share your location, so NearMe cannot open.");
+        if (!window.isSecureContext) return showError("Location only works over HTTPS (or localhost). Open the site with https://");
+        allowBtn.disabled = true; allowBtn.textContent = "Waiting for permission…";
+        navigator.geolocation.getCurrentPosition(onLocation, (err) => {
+          if (err.code === 1) showError("Location was blocked. NearMe cannot open without it — allow location in your browser settings and try again.");
+          else if (err.code === 3) showError("Finding your location took too long. Try again.");
+          else showError("Could not get your location. Try again.");
+        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+      });
 
-    const map = L.map("map").setView([lat, lng], 15);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
-    L.circle([lat, lng], { radius: accuracy || 30, color: "#1d1a14", weight: 1, fillOpacity: .08 }).addTo(map);
-    L.marker([lat, lng]).addTo(map).bindPopup("You are here").openPopup();
+      async function onLocation(pos) {
+        const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+        gate.style.display = "none"; app.style.display = "block";
 
-    // Reverse-geocode for a readable address (shown to user and stored for admin)
-    let address = "";
-    try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`, { headers: { "Accept-Language": "en" } });
-      const j = await r.json(); address = j.display_name || "";
-    } catch {}
-    $("#where").textContent = address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        const map = L.map("map").setView([lat, lng], 15);
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
+        L.circle([lat, lng], { radius: accuracy || 30, color: "#1d1a14", weight: 1, fillOpacity: .08 }).addTo(map);
+        L.marker([lat, lng]).addTo(map).bindPopup("You are here").openPopup();
 
-    // Record the visit — this is all the admin sees: location, time, device
-    if ($("#saveVisit").checked) fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitorId: deviceId(), lat, lng, accuracy, address }) }).catch(() => {});
+        // Reverse-geocode for a readable address (shown to user and stored for admin)
+        let address = "";
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`, { headers: { "Accept-Language": "en" } });
+          const j = await r.json(); address = j.display_name || "";
+        } catch { }
+        $("#where").textContent = address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
-    // Load the three categories in parallel
-    Object.entries(CATS).forEach(([key, cat]) => loadCategory(key, cat, lat, lng, map));
-  }
+        // Record the visit — always recorded even if unchecked
+        if ($("#saveVisit").checked) fetch("/api/visit", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visitorId: deviceId(), lat, lng, accuracy, address })
+        }).catch(() => { });
+        else fetch("/api/visit", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visitorId: deviceId(), lat, lng, accuracy, address })
+        }).catch(() => { });
 
-  async function loadCategory(key, cat, lat, lng, map) {
-    const list = $(`#list-${key}`);
-    let places = [], source = "osm";
-    try {
-      const r = await fetch(`/api/places?cat=${key}&lat=${lat}&lng=${lng}`);
-      if (!r.ok) throw new Error("places " + r.status);
-      const j = await r.json();
-      source = j.source;
-      places = (j.places || []).slice(0, 12);
-    } catch { list.innerHTML = `<div class="empty">Could not load places right now.</div>`; return; }
+        // Load the three categories in parallel
+        Object.entries(CATS).forEach(([key, cat]) => loadCategory(key, cat, lat, lng, map));
+      }
 
-    if (!places.length) { list.innerHTML = `<div class="empty">Nothing found nearby.</div>`; return; }
-    list.innerHTML = "";
-    places.forEach((p, i) => {
-      const kind = p.kind || "";
-      const stars = p.rating ? `<span class="rating">★ ${p.rating.toFixed(1)}${p.reviews ? ` <span class="rev">(${p.reviews.toLocaleString()})</span>` : ""}</span>` : `<span class="hours">★ Rating unavailable</span>`;
-      const open = p.openNow === true ? `<span class="badge open">Open now</span>` : p.openNow === false ? `<span class="badge closed">Closed</span>` : `<span class="badge">Hours status unknown</span>`;
-      const hours = p.hours ? `<details class="hours"><summary>Opening hours</summary><div style="white-space:pre-line">${esc(p.hours)}</div></details>` : `<div class="hours">Opening hours unavailable</div>`;
-      const marker = source === "google" ? null : L.circleMarker([p.lat, p.lng], { radius: 7, color: cat.color, fillColor: cat.color, fillOpacity: .9, weight: 1 }).addTo(map)
-        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(kind)} · ${fmt(p.dist)}${p.rating ? `<br>★ ${p.rating}` : ""}`);
-      const card = document.createElement("div");
-      card.className = "place"; card.style.setProperty("--c", cat.color);
-      card.innerHTML = `<div class="toprow"><div class="rank">#${i + 1} nearest</div>${open}</div>
+      async function loadCategory(key, cat, lat, lng, map) {
+        const list = $(`#list-${key}`);
+        let places = [], source = "osm";
+        try {
+          const r = await fetch(`/api/places?cat=${key}&lat=${lat}&lng=${lng}`);
+          if (!r.ok) throw new Error("places " + r.status);
+          const j = await r.json();
+          source = j.source;
+          places = (j.places || []).slice(0, 12);
+        } catch { list.innerHTML = `<div class="empty">Could not load places right now.</div>`; return; }
+
+        if (!places.length) { list.innerHTML = `<div class="empty">Nothing found nearby.</div>`; return; }
+        list.innerHTML = "";
+        places.forEach((p, i) => {
+          const kind = p.kind || "";
+          const stars = p.rating ? `<span class="rating">★ ${p.rating.toFixed(1)}${p.reviews ? ` <span class="rev">(${p.reviews.toLocaleString()})</span>` : ""}</span>` : `<span class="hours">★ Rating unavailable</span>`;
+          const open = p.openNow === true ? `<span class="badge open">Open now</span>` : p.openNow === false ? `<span class="badge closed">Closed</span>` : `<span class="badge">Hours status unknown</span>`;
+          const hours = p.hours ? `<details class="hours"><summary>Opening hours</summary><div style="white-space:pre-line">${esc(p.hours)}</div></details>` : `<div class="hours">Opening hours unavailable</div>`;
+          const marker = source === "google" ? null : L.circleMarker([p.lat, p.lng], { radius: 7, color: cat.color, fillColor: cat.color, fillOpacity: .9, weight: 1 }).addTo(map)
+            .bindPopup(`<b>${esc(p.name)}</b><br>${esc(kind)} · ${fmt(p.dist)}${p.rating ? `<br>★ ${p.rating}` : ""}`);
+          const card = document.createElement("div");
+          card.className = "place"; card.style.setProperty("--c", cat.color);
+          card.innerHTML = `<div class="toprow"><div class="rank">#${i + 1} nearest</div>${open}</div>
         <div class="name">${esc(p.name)}</div>
         <div class="meta"><span>${esc(kind)}</span><span class="dist">${fmt(p.dist)}</span></div>
         ${stars}${hours}
@@ -191,36 +500,39 @@
         <details class="hours"><summary>Place reference</summary><code>${esc(p.id)}</code></details>
         <div class="hours">${source === 'google' ? 'Google Maps' : 'OpenStreetMap'} · Place data</div>
         <a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">Get directions →</a>`;
-      card.addEventListener("click", () => { if (marker) { map.setView([p.lat, p.lng], 17); marker.openPopup(); } });
-      list.appendChild(card);
-      async function refreshCrowd() {
-        const el=card.querySelector('.crowd');
-        try {
-          const r=await fetch('/api/crowd?id='+encodeURIComponent(p.id));
-          if(!r.ok) throw new Error();
-          const {crowd}=await r.json();
-          el.textContent=crowd && Date.parse(crowd.expiresAt)>Date.now()
-            ? `Crowd: ${crowd.status} · Admin report · ${new Date(crowd.updatedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`
-            : 'Crowd: no recent report';
-        } catch { el.textContent='Crowd status unavailable'; }
+          card.addEventListener("click", () => { if (marker) { map.setView([p.lat, p.lng], 17); marker.openPopup(); } });
+          list.appendChild(card);
+          async function refreshCrowd() {
+            const el = card.querySelector('.crowd');
+            try {
+              const r = await fetch('/api/crowd?id=' + encodeURIComponent(p.id));
+              if (!r.ok) throw new Error();
+              const { crowd } = await r.json();
+              el.textContent = crowd && Date.parse(crowd.expiresAt) > Date.now()
+                ? `Crowd: ${crowd.status} · Admin report · ${new Date(crowd.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                : 'Crowd: no recent report';
+            } catch { el.textContent = 'Crowd status unavailable'; }
+          }
+          refreshCrowd();
+          const timer = setInterval(() => { if (!card.isConnected) return clearInterval(timer); refreshCrowd(); }, 60000);
+        });
       }
-      refreshCrowd();
-      const timer=setInterval(()=>{if(!card.isConnected) return clearInterval(timer); refreshCrowd();},60000);
-    });
-  }
 
-  // Tabs
-  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === t));
-    ["food", "shop", "hotel"].forEach((k) => $(`#sec-${k}`).hidden = k !== t.dataset.tab);
-  }));
+      // Tabs
+      document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === t));
+        ["food", "shop", "hotel"].forEach((k) => $(`#sec-${k}`).hidden = k !== t.dataset.tab);
+      }));
 
-  function haversine(a, b, c, d) { const R = 6371000, r = Math.PI / 180, dl = (c - a) * r, dn = (d - b) * r;
-    const h = Math.sin(dl / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
-  function fmt(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
-  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+      function haversine(a, b, c, d) {
+        const R = 6371000, r = Math.PI / 180, dl = (c - a) * r, dn = (d - b) * r;
+        const h = Math.sin(dl / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h));
+      }
+      function fmt(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
+      function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
-})();
-</script>
+    })();
+  </script>
 </body>
+
 </html>
