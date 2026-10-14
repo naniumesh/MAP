@@ -32,14 +32,14 @@
 <body>
 <header>
   <h1>NearMe · Visitor locations</h1>
-  <div class="stats"><span><b id="total">0</b> visits</span><span><b id="unique">0</b> devices</span><span><b id="today">0</b> today</span></div>
-  <div style="display:flex;gap:8px"><button id="refresh">Refresh</button><button id="csv">Download CSV</button><button class="danger" id="clear">Clear all</button></div>
+  <div class="stats"><span><b id="total">0</b> visits</span><span><b id="unique">0</b> devices</span><span><b id="today">0</b> today</span><span><b id="liveCount">0</b> live now</span></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="base">Set base = my location</button><button id="refresh">Refresh</button><button id="csv">Download CSV</button><button class="danger" id="clear">Clear all</button></div>
 </header>
 <div id="storeNote" hidden style="background:#fff3e0;color:#7a3b00;padding:10px 16px;font-weight:600">Storage is not connected — visits are kept only temporarily. Add Upstash Redis in Vercel (see README) to keep them permanently.</div>
 <div id="map"></div>
 <div class="wrap">
   <table>
-    <thead><tr><th>#</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>Address</th><th>Device</th><th>IP</th><th>Map</th></tr></thead>
+    <thead><tr><th>#</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>From base</th><th>Address</th><th>Device</th><th>IP</th><th>Map</th></tr></thead>
     <tbody id="rows"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
   </table>
 </div>
@@ -50,6 +50,12 @@
   const map = L.map("map").setView([20.59, 78.96], 5);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
   let layer = L.layerGroup().addTo(map), visits = [], markers = {};
+  let liveLayer = L.layerGroup().addTo(map), liveMarkers = {};
+  let base = null;
+  try { base = JSON.parse(localStorage.getItem("nearme_base") || "null"); } catch {}
+  function dist(a, b, c, d) { const R=6371000,r=Math.PI/180,dl=(c-a)*r,dn=(d-b)*r,h=Math.sin(dl/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(dn/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+  function fmtKm(m){ return m<1000?Math.round(m)+" m":(m/1000).toFixed(2)+" km"; }
+  if (base) { L.marker([base.lat, base.lng], {opacity:.7}).addTo(map).bindPopup("Base location"); }
 
   let password = sessionStorage.getItem("nearme_admin") || "";
   async function load() {
@@ -79,6 +85,7 @@
       tr.innerHTML = `<td class="num">${i + 1}</td><td class="num">${new Date(v.time).toLocaleString()}</td>
         <td class="num">${v.lat.toFixed(6)}</td><td class="num">${v.lng.toFixed(6)}</td>
         <td class="num">${v.accuracy ? "±" + Math.round(v.accuracy) + " m" : "—"}</td>
+        <td class="num">${base ? fmtKm(dist(base.lat, base.lng, v.lat, v.lng)) : "set base"}</td>
         <td class="addr">${esc(v.address || "")}<div class="vid">device ${esc(v.visitorId.slice(0, 8))}</div></td>
         <td>${esc(shortUA(v.userAgent))}</td><td class="num">${esc(v.ip || "")}</td>
         <td><a href="https://www.google.com/maps?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open ↗</a></td>`;
@@ -105,7 +112,32 @@
     const body = visits.map((v) => [v.time, v.lat, v.lng, v.accuracy || "", v.address, v.visitorId, v.ip, v.userAgent].map((x) => `"${String(x ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([head + body], { type: "text/csv" })); a.download = "nearme-visits.csv"; a.click();
   });
-  load(); setInterval(load, 30000);
+
+  // Live sharers (only people who tapped "Share my live location" and are active now)
+  const password0 = () => sessionStorage.getItem("nearme_admin") || "";
+  async function loadLive() {
+    const pw = password0(); if (!pw) return;
+    let data = [];
+    try { const r = await fetch("/api/live-view", { headers: { "x-admin-password": pw } }); if (!r.ok) return; data = (await r.json()).live || []; } catch { return; }
+    const seen = {};
+    data.forEach((p) => {
+      seen[p.id] = true;
+      const label = (p.name || "Someone") + " · live · " + (base ? fmtKm(dist(base.lat, base.lng, p.lat, p.lng)) + " from base" : new Date(p.time).toLocaleTimeString());
+      if (liveMarkers[p.id]) { liveMarkers[p.id].setLatLng([p.lat, p.lng]).setPopupContent(label); }
+      else { liveMarkers[p.id] = L.circleMarker([p.lat, p.lng], { radius: 9, color: "#1c6b3a", fillColor: "#2ecc71", fillOpacity: .95, weight: 2 }).bindPopup(label).addTo(liveLayer); }
+    });
+    Object.keys(liveMarkers).forEach((id) => { if (!seen[id]) { liveLayer.removeLayer(liveMarkers[id]); delete liveMarkers[id]; } });
+    document.getElementById("liveCount").textContent = data.length;
+  }
+  document.getElementById("base").addEventListener("click", () => {
+    navigator.geolocation.getCurrentPosition((pos) => {
+      base = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      try { localStorage.setItem("nearme_base", JSON.stringify(base)); } catch {}
+      location.reload();
+    }, () => alert("Could not get your location."));
+  });
+  setInterval(loadLive, 5000);
+  load(); loadLive(); setInterval(load, 30000);
 })();
 </script>
 </body>

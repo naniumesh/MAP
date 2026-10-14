@@ -43,6 +43,7 @@
   .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
   .tab { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 999px; padding: 8px 16px; font-weight: 600; }
   .tab[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .tab[disabled] { opacity:.5; cursor:default; }
   .section h2 { font-size: 1.35rem; margin-bottom: 4px; }
   .section .sub { color: var(--muted); font-size: .85rem; margin: 0 0 12px; }
   .list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
@@ -55,6 +56,12 @@
   .rank { font-size: .75rem; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
   .empty { color: var(--muted); padding: 10px 0; }
   .loading { color: var(--muted); }
+  #liveBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: #1f7a3d; color: #fff; padding: 10px max(16px, env(safe-area-inset-left,0px)); font-weight: 600; font-size: .9rem; }
+  #liveBar button { background: #fff; color: #1f7a3d; border: 0; border-radius: 8px; padding: 7px 14px; font-weight: 700; }
+  .share-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .share-btn { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 11px 18px; font-weight: 700; }
+  .share-btn[aria-pressed="true"] { background: #1f7a3d; color: #fff; border-color: #1f7a3d; }
+  .share-note { color: var(--muted); font-size: .8rem; max-width: 46ch; }
   .leaflet-popup-content { font-family: var(--body); }
   @media (prefers-reduced-motion: no-preference) { .place { transition: border-color .15s; } }
 </style>
@@ -77,8 +84,24 @@
     <h1>NearMe</h1>
     <div id="where">Locating…</div>
   </header>
+  <div id="shareBar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px max(16px,env(safe-area-inset-left,0px));background:var(--card);border-bottom:1px solid var(--line)">
+    <button class="tab" id="shareBtn">📡 Share my live location</button>
+    <span id="shareState" style="color:var(--muted);font-size:.85rem"></span>
+  </div>
+  <div id="shareBanner" hidden style="background:#1c6b3a;color:#fff;padding:10px max(16px,env(safe-area-inset-left,0px));display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-weight:600">
+    <span>📡 You are sharing your live location. It updates while this page is open and stops when you close it.</span>
+    <button id="stopShareBtn" style="background:#fff;color:#1c6b3a;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer">Stop sharing</button>
+  </div>
+  <div id="liveBar" hidden>
+    <span id="liveMsg">📡 You are sharing your live location. Anyone with your share link can see where you are until you stop.</span>
+    <button id="liveStop">Stop sharing</button>
+  </div>
   <div id="map"></div>
   <main>
+    <div class="share-row">
+      <button id="liveStart" class="share-btn">📡 Share my live location</button>
+      <span class="share-note">You'll see a banner the whole time and can stop with one tap. Only people you send the link to can see you.</span>
+    </div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-tab="food">🍽 Food</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="shop">🛍 Shopping</button>
@@ -180,6 +203,38 @@
     const h = Math.sin(dl / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
   function fmt(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+  // --- Opt-in live location sharing (the person always sees it is on, and can stop) ---
+  let watchId = null;
+  const shareBtn = $("#shareBtn"), stopBtn = $("#stopShareBtn"), banner = $("#shareBanner"), shareState = $("#shareState");
+  function pushLive(lat, lng, accuracy) {
+    let name = "";
+    try { name = localStorage.getItem("nearme_name") || ""; } catch {}
+    fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitorId, name, lat, lng, accuracy, sharing: true }) }).catch(() => {});
+  }
+  function startShare() {
+    if (!navigator.geolocation) return;
+    let name = "";
+    try { name = localStorage.getItem("nearme_name") || ""; } catch {}
+    if (!name) {
+      name = (window.prompt("Your name (shown to whoever you share with). Leave blank to stay unnamed:") || "").trim();
+      try { if (name) localStorage.setItem("nearme_name", name); } catch {}
+    }
+    banner.hidden = false; shareBtn.disabled = true; shareState.textContent = "Live sharing is ON";
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => pushLive(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+      () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
+  }
+  function stopShare() {
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    banner.hidden = true; shareBtn.disabled = false; shareState.textContent = "";
+    fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitorId, sharing: false }) }).catch(() => {});
+  }
+  shareBtn.addEventListener("click", startShare);
+  stopBtn.addEventListener("click", stopShare);
+  window.addEventListener("pagehide", () => { if (watchId !== null) navigator.sendBeacon?.("/api/live", new Blob([JSON.stringify({ visitorId, sharing: false })], { type: "application/json" })); });
 })();
 </script>
 </body>
