@@ -56,12 +56,6 @@
   .rank { font-size: .75rem; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
   .empty { color: var(--muted); padding: 10px 0; }
   .loading { color: var(--muted); }
-  #liveBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: #1f7a3d; color: #fff; padding: 10px max(16px, env(safe-area-inset-left,0px)); font-weight: 600; font-size: .9rem; }
-  #liveBar button { background: #fff; color: #1f7a3d; border: 0; border-radius: 8px; padding: 7px 14px; font-weight: 700; }
-  .share-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .share-btn { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 11px 18px; font-weight: 700; }
-  .share-btn[aria-pressed="true"] { background: #1f7a3d; color: #fff; border-color: #1f7a3d; }
-  .share-note { color: var(--muted); font-size: .8rem; max-width: 46ch; }
   .leaflet-popup-content { font-family: var(--body); }
   @media (prefers-reduced-motion: no-preference) { .place { transition: border-color .15s; } }
 </style>
@@ -92,16 +86,8 @@
     <span>📡 You are sharing your live location. It updates while this page is open and stops when you close it.</span>
     <button id="stopShareBtn" style="background:#fff;color:#1c6b3a;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer">Stop sharing</button>
   </div>
-  <div id="liveBar" hidden>
-    <span id="liveMsg">📡 You are sharing your live location. Anyone with your share link can see where you are until you stop.</span>
-    <button id="liveStop">Stop sharing</button>
-  </div>
   <div id="map"></div>
   <main>
-    <div class="share-row">
-      <button id="liveStart" class="share-btn">📡 Share my live location</button>
-      <span class="share-note">You'll see a banner the whole time and can stop with one tap. Only people you send the link to can see you.</span>
-    </div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" data-tab="food">🍽 Food</button>
       <button class="tab" role="tab" aria-selected="false" data-tab="shop">🛍 Shopping</button>
