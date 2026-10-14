@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NearMe</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap">
 <style>
@@ -100,9 +101,9 @@
   try { visitorId = localStorage.getItem("nearme_vid") || crypto.randomUUID(); localStorage.setItem("nearme_vid", visitorId); } catch { visitorId = crypto.randomUUID(); }
 
   const CATS = {
-    food:  { color: "#c0541f", radius: 2000, query: 'nwr["amenity"~"^(restaurant|cafe|fast_food|food_court|ice_cream)$"]' },
-    shop:  { color: "#2d6a8f", radius: 2000, query: 'nwr["shop"~"^(mall|supermarket|department_store|clothes|convenience|electronics|bakery|jewelry|books|shoes)$"]' },
-    hotel: { color: "#5f6e2f", radius: 3000, query: 'nwr["tourism"~"^(hotel|guest_house|hostel|motel)$"]' },
+    food:  { color: "#c0541f" },
+    shop:  { color: "#2d6a8f" },
+    hotel: { color: "#5f6e2f" },
   };
 
   function showError(msg) { gateErr.textContent = msg; gateErr.style.display = "block"; allowBtn.disabled = false; allowBtn.textContent = "Try again"; }
@@ -145,21 +146,18 @@
 
   async function loadCategory(key, cat, lat, lng, map) {
     const list = $(`#list-${key}`);
-    const q = `[out:json][timeout:25];${cat.query}(around:${cat.radius},${lat},${lng});out center tags 60;`;
     let places = [];
     try {
-      const r = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(q) });
+      const r = await fetch(`/api/places?cat=${key}&lat=${lat}&lng=${lng}`);
+      if (!r.ok) throw new Error("places " + r.status);
       const j = await r.json();
-      places = j.elements.map((e) => {
-        const plat = e.lat ?? e.center?.lat, plng = e.lon ?? e.center?.lon;
-        return { name: e.tags?.name, lat: plat, lng: plng, tags: e.tags || {}, dist: haversine(lat, lng, plat, plng) };
-      }).filter((p) => p.name && p.lat).sort((a, b) => a.dist - b.dist).slice(0, 12);
+      places = j.places.map((p) => ({ ...p, dist: haversine(lat, lng, p.lat, p.lng) })).sort((a, b) => a.dist - b.dist).slice(0, 12);
     } catch { list.innerHTML = `<div class="empty">Could not load places right now.</div>`; return; }
 
     if (!places.length) { list.innerHTML = `<div class="empty">Nothing found nearby.</div>`; return; }
     list.innerHTML = "";
     places.forEach((p, i) => {
-      const kind = p.tags.cuisine || p.tags.amenity || p.tags.shop || p.tags.tourism || "";
+      const kind = p.kind || "";
       const marker = L.circleMarker([p.lat, p.lng], { radius: 7, color: cat.color, fillColor: cat.color, fillOpacity: .9, weight: 1 }).addTo(map)
         .bindPopup(`<b>${esc(p.name)}</b><br>${esc(kind)} · ${fmt(p.dist)}`);
       const card = document.createElement("div");

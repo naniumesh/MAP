@@ -3,6 +3,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { recordVisit, adminVisits } = require("./lib/handlers");
+const places = require("./api/places");
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -15,6 +16,11 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (req.method === "POST" && url.pathname === "/api/visit") { const o = await recordVisit(req, await readBody(req)); return send(res, o.status, o.body); }
+    if (url.pathname === "/api/places") {
+      req.query = Object.fromEntries(url.searchParams);
+      res.status = (c) => { res.statusCode = c; return res; }; res.json = (b) => send(res, res.statusCode, b);
+      return places(req, res);
+    }
     if (url.pathname === "/api/visits") { const o = await adminVisits(req); return send(res, o.status, o.body); }
   } catch (e) { return send(res, 500, { error: e.message }); }
 
