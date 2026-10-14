@@ -1,7 +1,7 @@
-# NearMe v1.1
+# NearMe v1.2
 
 ## Deploy this update
-Replace the old deployment with this entire folder, including public, api, lib and server.js. Remove old live-location scripts/endpoints from your deployed project if they came from a different version. Redeploy/restart, then hard-refresh Chrome (Ctrl+Shift+R). The visitor header must say **v1.1**. This ZIP did not contain the live-sharing banner shown in the supplied screenshot.
+Replace the old deployment with this entire folder, including public, api, lib and server.js. Remove old live-location scripts/endpoints from your deployed project if they came from a different version. Redeploy/restart, then hard-refresh Chrome (Ctrl+Shift+R). The visitor header must say **v1.2**. This ZIP did not contain the live-sharing banner shown in the supplied screenshot.
 
 ## Changes
 - No live-sharing button, banner, location watcher or background tracking.
@@ -18,3 +18,10 @@ Set ADMIN_PASSWORD before deploying (legacy default is admin123). On Vercel use 
 
 ## Validation
 Run `node --test test/*.test.js`. Tests mock provider responses; actual Google/OSM calls require network access and your configured key. Browser location requires HTTPS except localhost. No code can continue tracking through this page after the browser closes.
+
+## v1.2: latest location per device and directions
+- A random first-party browser ID is saved only when the visitor opts in to storing a visit. Subsequent consented visits update that device’s latest record.
+- Admin map, table, counts and CSV show one latest record per browser ID. Previously saved duplicates sharing an ID are collapsed. Older records created with a different random ID on every visit cannot be reliably merged; clear old records from admin if needed.
+- Directions opens Google Maps with the saved location as destination. Google Maps lets the admin use their current location or choose an origin.
+- This identifies a browser profile, not a physical person: different browsers, private mode, clearing site storage or blocked storage can create separate entries. IP addresses are not used to merge people.
+- Last recorded time is shown explicitly. No continuous or background location collection is added.

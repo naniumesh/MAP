@@ -84,7 +84,7 @@
 
 <div id="app">
   <header>
-    <h1>NearMe <small style="font:12px var(--body);color:var(--muted)">v1.1</small></h1>
+    <h1>NearMe <small style="font:12px var(--body);color:var(--muted)">v1.2</small></h1>
     <div id="where">Locating…</div>
   </header>
   <div id="map"></div>
@@ -105,6 +105,17 @@
 (() => {
   const $ = (s) => document.querySelector(s);
   const gate = $("#gate"), app = $("#app"), allowBtn = $("#allowBtn"), gateErr = $("#gateErr");
+
+  // A first-party random identifier, created only after optional visit-storage consent.
+  function deviceId() {
+    try {
+      const saved = localStorage.getItem('nearme_vid');
+      if (saved && /^[a-zA-Z0-9-]{1,64}$/.test(saved)) return saved;
+      const id = crypto.randomUUID();
+      localStorage.setItem('nearme_vid', id);
+      return id;
+    } catch { return crypto.randomUUID(); }
+  }
 
   const CATS = {
     food:  { color: "#c0541f" },
@@ -144,7 +155,7 @@
 
     // Record the visit — this is all the admin sees: location, time, device
     if ($("#saveVisit").checked) fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitorId: crypto.randomUUID(), lat, lng, accuracy, address }) }).catch(() => {});
+      body: JSON.stringify({ visitorId: deviceId(), lat, lng, accuracy, address }) }).catch(() => {});
 
     // Load the three categories in parallel
     Object.entries(CATS).forEach(([key, cat]) => loadCategory(key, cat, lat, lng, map));

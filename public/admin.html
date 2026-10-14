@@ -31,8 +31,8 @@
 </head>
 <body>
 <header>
-  <h1>NearMe · Visitor locations</h1>
-  <div class="stats"><span><b id="total">0</b> visits</span><span><b id="unique">0</b> devices</span><span><b id="today">0</b> today</span></div>
+  <h1>NearMe · Latest device locations</h1>
+  <div class="stats"><span><b id="total">0</b> saved devices</span><span><b id="unique">0</b> devices</span><span><b id="today">0</b> updated today</span></div>
   <div style="display:flex;gap:8px;flex-wrap:wrap"><button id="base">Set base = my location</button><button id="refresh">Refresh</button><button id="csv">Download CSV</button><button class="danger" id="clear">Clear all</button></div>
 </header>
 <div id="storeNote" hidden style="background:#fff3e0;color:#7a3b00;padding:10px 16px;font-weight:600">Storage is not connected — visits are kept only temporarily. Add Upstash Redis in Vercel (see README) to keep them permanently.</div>
@@ -45,10 +45,10 @@
     <label>Crowd <select id="crowdStatus"><option>Quiet</option><option>Moderate</option><option>Busy</option><option>Crowded</option></select></label>
     <button>Save report</button><span id="crowdMessage" role="status"></span>
   </form>
-  <p>Visitor records below are optional, consented visit snapshots. They are not live locations.</p>
+  <p>One row per browser/device, showing its latest consented visit location and time. Directions opens Google Maps to that saved location; the person may have moved.</p>
   <table>
-    <thead><tr><th>#</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>From base</th><th>Address</th><th>Device</th><th>IP</th><th>Map</th></tr></thead>
-    <tbody id="rows"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+    <thead><tr><th>#</th><th>Last recorded</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>From base</th><th>Address</th><th>Device</th><th>IP</th><th>Directions</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
   </table>
 </div>
 
@@ -82,7 +82,7 @@
     document.getElementById("total").textContent = visits.length;
     document.getElementById("unique").textContent = new Set(visits.map((v) => v.visitorId)).size;
     document.getElementById("today").textContent = visits.filter((v) => new Date(v.time).toDateString() === today).length;
-    if (!visits.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">No visitors yet. Open the site in another tab and allow location.</td></tr>`; return; }
+    if (!visits.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">No saved devices yet. A visitor must opt in to saving their visit.</td></tr>`; return; }
     const bounds = [];
     visits.forEach((v, i) => {
       const m = L.circleMarker([v.lat, v.lng], { radius: 7, color: "#c0541f", fillColor: "#c0541f", fillOpacity: .85, weight: 1 })
@@ -95,7 +95,7 @@
         <td class="num">${base ? fmtKm(dist(base.lat, base.lng, v.lat, v.lng)) : "set base"}</td>
         <td class="addr">${esc(v.address || "")}<div class="vid">device ${esc(v.visitorId.slice(0, 8))}</div></td>
         <td>${esc(shortUA(v.userAgent))}</td><td class="num">${esc(v.ip || "")}</td>
-        <td><a href="https://www.google.com/maps?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open ↗</a></td>`;
+        <td><a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener">Directions ↗</a></td>`;
       tr.addEventListener("click", (e) => { if (e.target.tagName === "A") return; map.setView([v.lat, v.lng], 16); m.openPopup(); });
       tb.appendChild(tr);
     });
