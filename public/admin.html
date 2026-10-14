@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NearMe Admin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Manrope:wght@400;600;700&display=swap">
+<style>
+  :root { --bg:#f6f3ec; --fg:#1d1a14; --muted:#6d6555; --card:#fff; --line:#e3dccd; --accent:#c0541f; --display:"Fraunces",Georgia,serif; --body:"Manrope",system-ui,sans-serif; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17150f; --fg:#f1ece0; --muted:#a39a86; --card:#221f18; --line:#35302a; --accent:#e5753d; color-scheme:dark; } }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--body); font-size:14px; }
+  header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 16px; background:var(--card); border-bottom:1px solid var(--line); }
+  h1 { font-family:var(--display); font-size:1.4rem; margin:0; }
+  .stats { display:flex; gap:18px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .stats b { color:var(--fg); font-size:1.1rem; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:8px; padding:8px 14px; font-weight:600; }
+  button.danger { color:var(--accent); border-color:var(--accent); }
+  #map { height:42vh; min-height:280px; }
+  .wrap { padding:16px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:.75rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  td.num { font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td a { color:var(--accent); font-weight:600; text-decoration:none; }
+  .addr { max-width:380px; color:var(--muted); }
+  .vid { font-family:ui-monospace,monospace; font-size:.75rem; color:var(--muted); }
+  tr:hover td { background:color-mix(in srgb, var(--accent) 6%, transparent); cursor:pointer; }
+  .empty { padding:24px; color:var(--muted); text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>NearMe · Visitor locations</h1>
+  <div class="stats"><span><b id="total">0</b> visits</span><span><b id="unique">0</b> devices</span><span><b id="today">0</b> today</span></div>
+  <div style="display:flex;gap:8px"><button id="refresh">Refresh</button><button id="csv">Download CSV</button><button class="danger" id="clear">Clear all</button></div>
+</header>
+<div id="storeNote" hidden style="background:#fff3e0;color:#7a3b00;padding:10px 16px;font-weight:600">Storage is not connected — visits are kept only temporarily. Add Upstash Redis in Vercel (see README) to keep them permanently.</div>
+<div id="map"></div>
+<div class="wrap">
+  <table>
+    <thead><tr><th>#</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>Address</th><th>Device</th><th>IP</th><th>Map</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+  </table>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(() => {
+  const map = L.map("map").setView([20.59, 78.96], 5);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
+  let layer = L.layerGroup().addTo(map), visits = [], markers = {};
+
+  let password = sessionStorage.getItem("nearme_admin") || "";
+  async function load() {
+    if (!password) { password = prompt("Admin password:") || ""; if (!password) return; }
+    const r = await fetch("/api/visits", { headers: { "x-admin-password": password } });
+    if (r.status === 401) { sessionStorage.removeItem("nearme_admin"); password = ""; alert("Wrong password"); return load(); }
+    sessionStorage.setItem("nearme_admin", password);
+    const j = await r.json(); visits = j.visits || [];
+    document.getElementById("storeNote").hidden = j.persistent;
+    render();
+  }
+
+  function render() {
+    layer.clearLayers(); markers = {};
+    const tb = document.getElementById("rows"); tb.innerHTML = "";
+    const today = new Date().toDateString();
+    document.getElementById("total").textContent = visits.length;
+    document.getElementById("unique").textContent = new Set(visits.map((v) => v.visitorId)).size;
+    document.getElementById("today").textContent = visits.filter((v) => new Date(v.time).toDateString() === today).length;
+    if (!visits.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">No visitors yet. Open the site in another tab and allow location.</td></tr>`; return; }
+    const bounds = [];
+    visits.forEach((v, i) => {
+      const m = L.circleMarker([v.lat, v.lng], { radius: 7, color: "#c0541f", fillColor: "#c0541f", fillOpacity: .85, weight: 1 })
+        .bindPopup(`<b>${new Date(v.time).toLocaleString()}</b><br>${v.lat.toFixed(6)}, ${v.lng.toFixed(6)}<br>${esc(v.address || "")}`);
+      layer.addLayer(m); markers[v.id] = m; bounds.push([v.lat, v.lng]);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td class="num">${i + 1}</td><td class="num">${new Date(v.time).toLocaleString()}</td>
+        <td class="num">${v.lat.toFixed(6)}</td><td class="num">${v.lng.toFixed(6)}</td>
+        <td class="num">${v.accuracy ? "±" + Math.round(v.accuracy) + " m" : "—"}</td>
+        <td class="addr">${esc(v.address || "")}<div class="vid">device ${esc(v.visitorId.slice(0, 8))}</div></td>
+        <td>${esc(shortUA(v.userAgent))}</td><td class="num">${esc(v.ip || "")}</td>
+        <td><a href="https://www.google.com/maps?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open ↗</a></td>`;
+      tr.addEventListener("click", (e) => { if (e.target.tagName === "A") return; map.setView([v.lat, v.lng], 16); m.openPopup(); });
+      tb.appendChild(tr);
+    });
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+  }
+
+  function shortUA(ua = "") {
+    const os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
+    const br = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : /Firefox\//.test(ua) ? "Firefox" : "";
+    return [os, br].filter(Boolean).join(" · ") || ua.slice(0, 40);
+  }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+  document.getElementById("refresh").addEventListener("click", load);
+  document.getElementById("clear").addEventListener("click", async () => {
+    if (!confirm("Delete all recorded visits?")) return;
+    await fetch("/api/visits", { method: "DELETE", headers: { "x-admin-password": password } }); load();
+  });
+  document.getElementById("csv").addEventListener("click", () => {
+    const head = "time,latitude,longitude,accuracy_m,address,device_id,ip,user_agent\n";
+    const body = visits.map((v) => [v.time, v.lat, v.lng, v.accuracy || "", v.address, v.visitorId, v.ip, v.userAgent].map((x) => `"${String(x ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([head + body], { type: "text/csv" })); a.download = "nearme-visits.csv"; a.click();
+  });
+  load(); setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

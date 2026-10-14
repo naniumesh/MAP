@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NearMe</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+  /* Layout: map fills the top, three category rails below; gate overlay sits above everything until location is granted */
+  :root {
+    --bg: #f6f3ec; --fg: #1d1a14; --muted: #6d6555; --card: #ffffff; --line: #e3dccd;
+    --accent: #c0541f; --accent-ink: #ffffff; --food: #c0541f; --shop: #2d6a8f; --hotel: #5f6e2f;
+    --display: "Fraunces", Georgia, serif; --body: "Manrope", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) { :root { --bg:#17150f; --fg:#f1ece0; --muted:#a39a86; --card:#221f18; --line:#35302a; --accent:#e5753d; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+  h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; }
+  button { font: inherit; cursor: pointer; }
+
+  /* Gate */
+  #gate { position: fixed; inset: 0; z-index: 2000; background: var(--bg); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-left,0px)); }
+  #gate .panel { max-width: 440px; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; text-align: center; }
+  #gate h1 { font-size: 2.1rem; line-height: 1.1; margin-bottom: 10px; }
+  #gate p { color: var(--muted); margin: 0 0 20px; }
+  .pin { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; margin: 0 auto 16px; font-size: 26px; }
+  .btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px; padding: 13px 22px; font-weight: 700; font-size: 1rem; width: 100%; }
+  .btn:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+  .btn[disabled] { opacity: .6; cursor: wait; }
+  #gateErr { color: var(--accent); font-weight: 600; margin-top: 14px; display: none; }
+  .fine { font-size: .8rem; color: var(--muted); margin-top: 16px; }
+
+  /* App */
+  #app { display: none; min-height: 100%; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px max(16px, env(safe-area-inset-right,0px)) 12px max(16px, env(safe-area-inset-left,0px)); border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { font-size: 1.4rem; }
+  #where { color: var(--muted); font-size: .85rem; min-width: 0; text-align: right; }
+  #map { height: 46vh; min-height: 300px; width: 100%; }
+  main { padding: 16px max(16px, env(safe-area-inset-right,0px)) 32px max(16px, env(safe-area-inset-left,0px)); display: grid; gap: 22px; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tab { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 999px; padding: 8px 16px; font-weight: 600; }
+  .tab[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .section h2 { font-size: 1.35rem; margin-bottom: 4px; }
+  .section .sub { color: var(--muted); font-size: .85rem; margin: 0 0 12px; }
+  .list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .place { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 4px; min-width: 0; border-left: 4px solid var(--c); cursor: pointer; }
+  .place:hover { border-color: var(--c); }
+  .place .name { font-weight: 700; }
+  .place .meta { color: var(--muted); font-size: .85rem; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .place .dist { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--fg); }
+  .place a { color: var(--c); font-weight: 600; font-size: .85rem; text-decoration: none; }
+  .rank { font-size: .75rem; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .empty { color: var(--muted); padding: 10px 0; }
+  .loading { color: var(--muted); }
+  .leaflet-popup-content { font-family: var(--body); }
+  @media (prefers-reduced-motion: no-preference) { .place { transition: border-color .15s; } }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="panel">
+    <div class="pin">📍</div>
+    <h1>Find the best around you</h1>
+    <p>NearMe shows the best food, shopping and hotels closest to where you are right now. No account, no form — just allow your location to enter.</p>
+    <button class="btn" id="allowBtn">Allow location &amp; enter</button>
+    <div id="gateErr"></div>
+    <p class="fine">Your position is used to find places near you and is recorded for site operations.</p>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <h1>NearMe</h1>
+    <div id="where">Locating…</div>
+  </header>
+  <div id="map"></div>
+  <main>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-tab="food">🍽 Food</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="shop">🛍 Shopping</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="hotel">🏨 Hotels</button>
+    </div>
+    <section class="section" id="sec-food"><h2>Best food near you</h2><p class="sub">Restaurants, cafés and fast food within 2 km, nearest first.</p><div class="list" id="list-food"><div class="loading">Searching…</div></div></section>
+    <section class="section" id="sec-shop" hidden><h2>Shopping near you</h2><p class="sub">Malls, supermarkets, markets and shops within 2 km.</p><div class="list" id="list-shop"><div class="loading">Searching…</div></div></section>
+    <section class="section" id="sec-hotel" hidden><h2>Hotels near you</h2><p class="sub">Hotels and guest houses within 3 km.</p><div class="list" id="list-hotel"><div class="loading">Searching…</div></div></section>
+  </main>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const gate = $("#gate"), app = $("#app"), allowBtn = $("#allowBtn"), gateErr = $("#gateErr");
+
+  // A stable anonymous id per browser so admin can see repeat visits from the same device
+  let visitorId;
+  try { visitorId = localStorage.getItem("nearme_vid") || crypto.randomUUID(); localStorage.setItem("nearme_vid", visitorId); } catch { visitorId = crypto.randomUUID(); }
+
+  const CATS = {
+    food:  { color: "#c0541f", radius: 2000, query: 'nwr["amenity"~"^(restaurant|cafe|fast_food|food_court|ice_cream)$"]' },
+    shop:  { color: "#2d6a8f", radius: 2000, query: 'nwr["shop"~"^(mall|supermarket|department_store|clothes|convenience|electronics|bakery|jewelry|books|shoes)$"]' },
+    hotel: { color: "#5f6e2f", radius: 3000, query: 'nwr["tourism"~"^(hotel|guest_house|hostel|motel)$"]' },
+  };
+
+  function showError(msg) { gateErr.textContent = msg; gateErr.style.display = "block"; allowBtn.disabled = false; allowBtn.textContent = "Try again"; }
+
+  allowBtn.addEventListener("click", () => {
+    if (!navigator.geolocation) return showError("This browser cannot share your location, so NearMe cannot open.");
+    if (!window.isSecureContext) return showError("Location only works over HTTPS (or localhost). Open the site with https://");
+    allowBtn.disabled = true; allowBtn.textContent = "Waiting for permission…";
+    navigator.geolocation.getCurrentPosition(onLocation, (err) => {
+      if (err.code === 1) showError("Location was blocked. NearMe cannot open without it — allow location in your browser settings and try again.");
+      else if (err.code === 3) showError("Finding your location took too long. Try again.");
+      else showError("Could not get your location. Try again.");
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+
+  async function onLocation(pos) {
+    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+    gate.style.display = "none"; app.style.display = "block";
+
+    const map = L.map("map").setView([lat, lng], 15);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map);
+    L.circle([lat, lng], { radius: accuracy || 30, color: "#1d1a14", weight: 1, fillOpacity: .08 }).addTo(map);
+    L.marker([lat, lng]).addTo(map).bindPopup("You are here").openPopup();
+
+    // Reverse-geocode for a readable address (shown to user and stored for admin)
+    let address = "";
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`, { headers: { "Accept-Language": "en" } });
+      const j = await r.json(); address = j.display_name || "";
+    } catch {}
+    $("#where").textContent = address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+    // Record the visit — this is all the admin sees: location, time, device
+    fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitorId, lat, lng, accuracy, address }) }).catch(() => {});
+
+    // Load the three categories in parallel
+    Object.entries(CATS).forEach(([key, cat]) => loadCategory(key, cat, lat, lng, map));
+  }
+
+  async function loadCategory(key, cat, lat, lng, map) {
+    const list = $(`#list-${key}`);
+    const q = `[out:json][timeout:25];${cat.query}(around:${cat.radius},${lat},${lng});out center tags 60;`;
+    let places = [];
+    try {
+      const r = await fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(q) });
+      const j = await r.json();
+      places = j.elements.map((e) => {
+        const plat = e.lat ?? e.center?.lat, plng = e.lon ?? e.center?.lon;
+        return { name: e.tags?.name, lat: plat, lng: plng, tags: e.tags || {}, dist: haversine(lat, lng, plat, plng) };
+      }).filter((p) => p.name && p.lat).sort((a, b) => a.dist - b.dist).slice(0, 12);
+    } catch { list.innerHTML = `<div class="empty">Could not load places right now.</div>`; return; }
+
+    if (!places.length) { list.innerHTML = `<div class="empty">Nothing found nearby.</div>`; return; }
+    list.innerHTML = "";
+    places.forEach((p, i) => {
+      const kind = p.tags.cuisine || p.tags.amenity || p.tags.shop || p.tags.tourism || "";
+      const marker = L.circleMarker([p.lat, p.lng], { radius: 7, color: cat.color, fillColor: cat.color, fillOpacity: .9, weight: 1 }).addTo(map)
+        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(kind)} · ${fmt(p.dist)}`);
+      const card = document.createElement("div");
+      card.className = "place"; card.style.setProperty("--c", cat.color);
+      card.innerHTML = `<div class="rank">#${i + 1} nearest</div><div class="name">${esc(p.name)}</div>
+        <div class="meta"><span>${esc(kind.replace(/_/g, " "))}</span><span class="dist">${fmt(p.dist)}</span></div>
+        <a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">Get directions →</a>`;
+      card.addEventListener("click", () => { map.setView([p.lat, p.lng], 17); marker.openPopup(); });
+      list.appendChild(card);
+    });
+  }
+
+  // Tabs
+  document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", x === t));
+    ["food", "shop", "hotel"].forEach((k) => $(`#sec-${k}`).hidden = k !== t.dataset.tab);
+  }));
+
+  function haversine(a, b, c, d) { const R = 6371000, r = Math.PI / 180, dl = (c - a) * r, dn = (d - b) * r;
+    const h = Math.sin(dl / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+  function fmt(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+})();
+</script>
+</body>
+</html>
