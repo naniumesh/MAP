@@ -38,3 +38,14 @@ test('admin names are protected, persist across location updates, and can be rem
  result=await adminVisits({method:'GET',headers});assert.equal(result.body.visits.find(v=>v.visitorId==='device-a').name,'');
  await store.setName('device-a','Sai');await store.clear();assert.deepEqual(await store.names(),{});
 });
+test('individual removal requires admin and removes only selected records and name',async()=>{
+ const {adminVisits}=require('../lib/handlers');
+ const headers={'x-admin-password':process.env.ADMIN_PASSWORD||'admin123'};
+ for(const id of ['a','b']){await store.add({id,visitorId:id,time:'2026-10-14T10:00:00Z'});await store.setName(id,'Name '+id);}
+ assert.equal((await adminVisits({method:'DELETE',headers:{},query:{visitorId:'a'}})).status,401);
+ assert.equal((await store.all()).length,2);
+ assert.equal((await adminVisits({method:'DELETE',headers,query:{visitorId:''}})).status,400);
+ assert.equal((await store.all()).length,2);
+ assert.equal((await adminVisits({method:'DELETE',headers,query:{visitorId:'a'}})).status,200);
+ assert.deepEqual((await store.all()).map(v=>v.visitorId),['b']);assert.deepEqual(await store.names(),{b:'Name b'});
+});

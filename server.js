@@ -28,7 +28,7 @@ http.createServer(async (req, res) => {
       res.status = (c) => { res.statusCode = c; return res; }; res.json = (b) => send(res, res.statusCode, b);
       return places(req, res);
     }
-    if (url.pathname === "/api/visits") { if(req.method === "PATCH") req.body=await readBody(req); const o = await adminVisits(req); return send(res, o.status, o.body); }
+    if (url.pathname === "/api/visits") { req.query=Object.fromEntries(url.searchParams); if(req.method === "PATCH") req.body=await readBody(req); const o = await adminVisits(req); return send(res, o.status, o.body); }
   } catch (e) { return send(res, 500, { error: e.message }); }
 
   let file = url.pathname === "/" ? "/index.html" : url.pathname === "/admin" ? "/admin.html" : url.pathname;

@@ -1,7 +1,7 @@
-# NearMe v1.3
+# NearMe v1.4
 
 ## Deploy this update
-Replace the old deployment with this entire folder, including public, api, lib and server.js. Remove old live-location scripts/endpoints from your deployed project if they came from a different version. Redeploy/restart, then hard-refresh Chrome (Ctrl+Shift+R). The visitor header must say **v1.3**. This ZIP did not contain the live-sharing banner shown in the supplied screenshot.
+Replace the old deployment with this entire folder, including public, api, lib and server.js. Remove old live-location scripts/endpoints from your deployed project if they came from a different version. Redeploy/restart, then hard-refresh Chrome (Ctrl+Shift+R). The visitor header must say **v1.4**. This ZIP did not contain the live-sharing banner shown in the supplied screenshot.
 
 ## Changes
 - No live-sharing button, banner, location watcher or background tracking.
@@ -28,3 +28,6 @@ Run `node --test test/*.test.js`. Tests mock provider responses; actual Google/O
 
 ## v1.3: admin device names
 Use Add name / Edit name in the admin table. Names appear in the table, map popups and CSV exports. They persist when the same browser/device submits a newer consented location. Leave the name blank to remove it. Clear all removes device records and names. Names are private admin labels, not verified identities. Redis saves names in a dedicated hash; local storage uses data/device-names.json.
+
+## v1.4: remove an individual saved device
+The admin-only Remove button deletes a device’s saved location records and assigned name. Other devices remain. Removal does not block website access: a later consented visit can create a new record. Admin labels and record-management actions are not displayed on the public site. The public location-saving consent disclosure remains.

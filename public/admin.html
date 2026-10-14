@@ -89,13 +89,23 @@
         .bindPopup(`<b>${esc(v.name || "Unnamed device")}</b><br><b>${new Date(v.time).toLocaleString()}</b><br>${v.lat.toFixed(6)}, ${v.lng.toFixed(6)}<br>${esc(v.address || "")}`);
       layer.addLayer(m); markers[v.id] = m; bounds.push([v.lat, v.lng]);
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td class="num">${i + 1}</td><td><strong>${esc(v.name || "Unnamed")}</strong><br><button class="rename">${v.name ? "Edit name" : "Add name"}</button></td><td class="num">${new Date(v.time).toLocaleString()}</td>
+      tr.innerHTML = `<td class="num">${i + 1}</td><td><strong>${esc(v.name || "Unnamed")}</strong><br><button class="rename">${v.name ? "Edit name" : "Add name"}</button> <button class="remove danger">Remove</button></td><td class="num">${new Date(v.time).toLocaleString()}</td>
         <td class="num">${v.lat.toFixed(6)}</td><td class="num">${v.lng.toFixed(6)}</td>
         <td class="num">${v.accuracy ? "±" + Math.round(v.accuracy) + " m" : "—"}</td>
         <td class="num">${base ? fmtKm(dist(base.lat, base.lng, v.lat, v.lng)) : "set base"}</td>
         <td class="addr">${esc(v.address || "")}<div class="vid">device ${esc(v.visitorId.slice(0, 8))}</div></td>
         <td>${esc(shortUA(v.userAgent))}</td><td class="num">${esc(v.ip || "")}</td>
         <td><a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener">Directions ↗</a></td>`;
+      tr.querySelector('.remove').addEventListener('click', async e=>{
+        e.stopPropagation();
+        if(!confirm('Remove this saved device location and its name? A future consented visit may create it again.')) return;
+        e.currentTarget.disabled=true;
+        try {
+          const r=await fetch('/api/visits?visitorId='+encodeURIComponent(v.visitorId),{method:'DELETE',headers:{'x-admin-password':password}});
+          const j=await r.json(); if(!r.ok) throw new Error(j.error || 'Could not remove device');
+          await load();
+        } catch(err) { alert(err.message); render(); }
+      });
       tr.querySelector('.rename').addEventListener('click', async e=>{
         e.stopPropagation();
         const name=prompt('Name for this device (up to 80 characters). Leave blank to remove:', v.name || '');
