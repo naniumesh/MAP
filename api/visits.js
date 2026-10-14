@@ -1,4 +1,4 @@
-// GET /api/visits — admin reads all locations (header x-admin-password). DELETE clears.
+// GET /api/visits — admin reads all locations (header x-admin-password). PATCH updates a device name. DELETE clears records and names.
 const { adminVisits } = require("../lib/handlers");
 module.exports = async (req, res) => {
   try {

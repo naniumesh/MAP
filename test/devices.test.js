@@ -23,3 +23,18 @@ test('directions link targets recorded coordinates and device ID persists only o
  const page=fs.readFileSync(path.join(__dirname,'../public/index.html'),'utf8');
  assert.match(page,/localStorage.getItem\('nearme_vid'\)/);assert.match(page,/visitorId: deviceId\(\)/);assert.match(page,/if \(\$\("#saveVisit"\).checked\) fetch/);
 });
+test('admin names are protected, persist across location updates, and can be removed',async()=>{
+ const {adminVisits}=require('../lib/handlers');
+ const headers={'x-admin-password':process.env.ADMIN_PASSWORD||'admin123'};
+ assert.equal((await adminVisits({method:'PATCH',headers:{},body:{visitorId:'device-a',name:'Sai'}})).status,401);
+ assert.equal((await adminVisits({method:'PATCH',headers,body:{visitorId:'device-a',name:'Sai'}})).status,200);
+ await store.add({id:'5',visitorId:'device-a',lat:15,lng:80,time:'2026-10-14T13:00:00Z'});
+ let result=await adminVisits({method:'GET',headers});
+ assert.equal(result.body.visits.find(v=>v.visitorId==='device-a').name,'Sai');
+ assert.equal(result.body.visits.find(v=>v.visitorId==='device-a').lat,15);
+ assert.equal((await adminVisits({method:'PATCH',headers,body:{visitorId:'device-a',name:'x'.repeat(81)}})).status,400);
+ assert.equal((await adminVisits({method:'PATCH',headers,body:{visitorId:'missing',name:'Sai'}})).status,404);
+ await adminVisits({method:'PATCH',headers,body:{visitorId:'device-a',name:''}});
+ result=await adminVisits({method:'GET',headers});assert.equal(result.body.visits.find(v=>v.visitorId==='device-a').name,'');
+ await store.setName('device-a','Sai');await store.clear();assert.deepEqual(await store.names(),{});
+});

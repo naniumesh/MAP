@@ -47,8 +47,8 @@
   </form>
   <p>One row per browser/device, showing its latest consented visit location and time. Directions opens Google Maps to that saved location; the person may have moved.</p>
   <table>
-    <thead><tr><th>#</th><th>Last recorded</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>From base</th><th>Address</th><th>Device</th><th>IP</th><th>Directions</th></tr></thead>
-    <tbody id="rows"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
+    <thead><tr><th>#</th><th>Name</th><th>Last recorded</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>From base</th><th>Address</th><th>Device</th><th>IP</th><th>Directions</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
   </table>
 </div>
 
@@ -82,21 +82,33 @@
     document.getElementById("total").textContent = visits.length;
     document.getElementById("unique").textContent = new Set(visits.map((v) => v.visitorId)).size;
     document.getElementById("today").textContent = visits.filter((v) => new Date(v.time).toDateString() === today).length;
-    if (!visits.length) { tb.innerHTML = `<tr><td colspan="10" class="empty">No saved devices yet. A visitor must opt in to saving their visit.</td></tr>`; return; }
+    if (!visits.length) { tb.innerHTML = `<tr><td colspan="11" class="empty">No saved devices yet. A visitor must opt in to saving their visit.</td></tr>`; return; }
     const bounds = [];
     visits.forEach((v, i) => {
       const m = L.circleMarker([v.lat, v.lng], { radius: 7, color: "#c0541f", fillColor: "#c0541f", fillOpacity: .85, weight: 1 })
-        .bindPopup(`<b>${new Date(v.time).toLocaleString()}</b><br>${v.lat.toFixed(6)}, ${v.lng.toFixed(6)}<br>${esc(v.address || "")}`);
+        .bindPopup(`<b>${esc(v.name || "Unnamed device")}</b><br><b>${new Date(v.time).toLocaleString()}</b><br>${v.lat.toFixed(6)}, ${v.lng.toFixed(6)}<br>${esc(v.address || "")}`);
       layer.addLayer(m); markers[v.id] = m; bounds.push([v.lat, v.lng]);
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td class="num">${i + 1}</td><td class="num">${new Date(v.time).toLocaleString()}</td>
+      tr.innerHTML = `<td class="num">${i + 1}</td><td><strong>${esc(v.name || "Unnamed")}</strong><br><button class="rename">${v.name ? "Edit name" : "Add name"}</button></td><td class="num">${new Date(v.time).toLocaleString()}</td>
         <td class="num">${v.lat.toFixed(6)}</td><td class="num">${v.lng.toFixed(6)}</td>
         <td class="num">${v.accuracy ? "±" + Math.round(v.accuracy) + " m" : "—"}</td>
         <td class="num">${base ? fmtKm(dist(base.lat, base.lng, v.lat, v.lng)) : "set base"}</td>
         <td class="addr">${esc(v.address || "")}<div class="vid">device ${esc(v.visitorId.slice(0, 8))}</div></td>
         <td>${esc(shortUA(v.userAgent))}</td><td class="num">${esc(v.ip || "")}</td>
         <td><a href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" target="_blank" rel="noopener">Directions ↗</a></td>`;
-      tr.addEventListener("click", (e) => { if (e.target.tagName === "A") return; map.setView([v.lat, v.lng], 16); m.openPopup(); });
+      tr.querySelector('.rename').addEventListener('click', async e=>{
+        e.stopPropagation();
+        const name=prompt('Name for this device (up to 80 characters). Leave blank to remove:', v.name || '');
+        if(name===null) return;
+        if(name.trim().length>80) return alert('Please use 80 characters or fewer.');
+        e.currentTarget.disabled=true;
+        try {
+          const r=await fetch('/api/visits',{method:'PATCH',headers:{'Content-Type':'application/json','x-admin-password':password},body:JSON.stringify({visitorId:v.visitorId,name})});
+          const j=await r.json(); if(!r.ok) throw new Error(j.error || 'Could not save name');
+          await load();
+        } catch(err) { alert(err.message); render(); }
+      });
+      tr.addEventListener("click", (e) => { if (e.target.closest("a,button")) return; map.setView([v.lat, v.lng], 16); m.openPopup(); });
       tb.appendChild(tr);
     });
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
@@ -111,12 +123,12 @@
 
   document.getElementById("refresh").addEventListener("click", load);
   document.getElementById("clear").addEventListener("click", async () => {
-    if (!confirm("Delete all recorded visits?")) return;
+    if (!confirm("Delete all recorded visits and saved device names?")) return;
     await fetch("/api/visits", { method: "DELETE", headers: { "x-admin-password": password } }); load();
   });
   document.getElementById("csv").addEventListener("click", () => {
-    const head = "time,latitude,longitude,accuracy_m,address,device_id,ip,user_agent\n";
-    const body = visits.map((v) => [v.time, v.lat, v.lng, v.accuracy || "", v.address, v.visitorId, v.ip, v.userAgent].map((x) => `"${String(x ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const head = "name,time,latitude,longitude,accuracy_m,address,device_id,ip,user_agent\n";
+    const body = visits.map((v) => [v.name || "", v.time, v.lat, v.lng, v.accuracy || "", v.address, v.visitorId, v.ip, v.userAgent].map((x) => `"${String(x ?? "").replace(/^[=+@\-\t\r]/, "'$&").replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([head + body], { type: "text/csv" })); a.download = "nearme-visits.csv"; a.click();
   });
 
