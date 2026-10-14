@@ -38,6 +38,14 @@
 <div id="storeNote" hidden style="background:#fff3e0;color:#7a3b00;padding:10px 16px;font-weight:600">Storage is not connected — visits are kept only temporarily. Add Upstash Redis in Vercel (see README) to keep them permanently.</div>
 <div id="map"></div>
 <div class="wrap">
+  <h2>Update place crowd status</h2>
+  <p>Copy a Place reference from a visitor card. Reports expire after one hour; this is a manual observation, not visitor tracking.</p>
+  <form id="crowdForm" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <label>Place ID <input id="placeId" required placeholder="osm:node:12345"></label>
+    <label>Crowd <select id="crowdStatus"><option>Quiet</option><option>Moderate</option><option>Busy</option><option>Crowded</option></select></label>
+    <button>Save report</button><span id="crowdMessage" role="status"></span>
+  </form>
+  <p>Visitor records below are optional, consented visit snapshots. They are not live locations.</p>
   <table>
     <thead><tr><th>#</th><th>Time</th><th>Latitude</th><th>Longitude</th><th>Accuracy</th><th>From base</th><th>Address</th><th>Device</th><th>IP</th><th>Map</th></tr></thead>
     <tbody id="rows"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
@@ -112,6 +120,15 @@
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([head + body], { type: "text/csv" })); a.download = "nearme-visits.csv"; a.click();
   });
 
+  document.getElementById('crowdForm').addEventListener('submit', async e=>{
+    e.preventDefault(); const message=document.getElementById('crowdMessage'); message.textContent='Saving…';
+    try {
+      const r=await fetch('/api/crowd',{method:'POST',headers:{'Content-Type':'application/json','x-admin-password':password},
+        body:JSON.stringify({id:document.getElementById('placeId').value.trim(),status:document.getElementById('crowdStatus').value})});
+      const j=await r.json(); if(!r.ok) throw new Error(j.error || 'Save failed');
+      message.textContent='Saved. Visible for one hour; visitor cards refresh within one minute.';
+    } catch(e) { message.textContent=e.message; }
+  });
   load(); setInterval(load, 30000);
 })();
 </script>

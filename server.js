@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { recordVisit, adminVisits } = require("./lib/handlers");
 const places = require("./api/places");
+const crowd = require("./api/crowd");
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -16,6 +17,12 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (req.method === "POST" && url.pathname === "/api/visit") { const o = await recordVisit(req, await readBody(req)); return send(res, o.status, o.body); }
+    if (url.pathname === "/api/crowd") {
+      req.query=Object.fromEntries(url.searchParams);
+      if(req.method==='POST') req.body=await readBody(req);
+      res.status=c=>{res.statusCode=c;return res;};res.json=b=>send(res,res.statusCode,b);
+      return crowd(req,res);
+    }
     if (url.pathname === "/api/places") {
       req.query = Object.fromEntries(url.searchParams);
       res.status = (c) => { res.statusCode = c; return res; }; res.json = (b) => send(res, res.statusCode, b);
@@ -27,7 +34,7 @@ http.createServer(async (req, res) => {
   let file = url.pathname === "/" ? "/index.html" : url.pathname === "/admin" ? "/admin.html" : url.pathname;
   const full = path.join(PUBLIC_DIR, path.normalize(file).replace(/^(\.\.[/\\])+/, ""));
   if (full.startsWith(PUBLIC_DIR) && fs.existsSync(full) && fs.statSync(full).isFile()) {
-    res.writeHead(200, { "Content-Type": MIME[path.extname(full)] || "application/octet-stream" });
+    res.writeHead(200, { "Cache-Control":"no-store", "Content-Type": MIME[path.extname(full)] || "application/octet-stream" });
     return fs.createReadStream(full).pipe(res);
   }
   send(res, 404, "Not found", "text/plain");

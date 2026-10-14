@@ -18,19 +18,22 @@ function haversine(a, b, c, d) { const R = 6371000, r = Math.PI / 180, dl = (c -
   const h = Math.sin(dl / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
 
 async function fromGoogle(cat, lat, lng, key) {
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&rankby=distance&type=${GOOGLE_TYPE[cat]}&key=${key}`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const types = {food: ['restaurant','cafe','fast_food_restaurant'], shop: ['shopping_mall','supermarket','store'], hotel: ['hotel','lodging']};
+  const r = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+    method: 'POST', signal: AbortSignal.timeout(15000),
+    headers: {'Content-Type':'application/json','X-Goog-Api-Key':key,
+      'X-Goog-FieldMask':'places.id,places.displayName,places.location,places.primaryType,places.rating,places.userRatingCount,places.currentOpeningHours,places.regularOpeningHours,places.businessStatus'},
+    body: JSON.stringify({includedTypes:types[cat],maxResultCount:12,rankPreference:'DISTANCE',languageCode:'en',
+      locationRestriction:{circle:{center:{latitude:lat,longitude:lng},radius:OSM[cat].radius}}})
+  });
+  if (!r.ok) throw new Error('Place provider unavailable. Check Places API (New) and billing configuration.');
   const j = await r.json();
-  if (j.status && j.status !== "OK" && j.status !== "ZERO_RESULTS") throw new Error("google: " + j.status + (j.error_message ? " - " + j.error_message : ""));
-  return (j.results || []).map((p) => ({
-    name: p.name,
-    lat: p.geometry?.location?.lat, lng: p.geometry?.location?.lng,
-    kind: (p.types || []).find((t) => !["point_of_interest", "establishment", "food"].includes(t))?.replace(/_/g, " ") || "",
-    rating: p.rating ?? null,
-    reviews: p.user_ratings_total ?? null,
-    openNow: p.opening_hours?.open_now ?? null,
-    closedPermanently: p.business_status === "CLOSED_PERMANENTLY",
-  })).filter((p) => p.name && p.lat && !p.closedPermanently);
+  return (j.places || []).filter(p => p.businessStatus !== 'CLOSED_PERMANENTLY').map(p => ({
+    id:'google:'+p.id, name:p.displayName?.text, lat:p.location?.latitude, lng:p.location?.longitude,
+    kind:(p.primaryType || '').replace(/_/g,' '),rating:p.rating ?? null,reviews:p.userRatingCount ?? null,
+    openNow:p.currentOpeningHours?.openNow ?? null,
+    hours:(p.currentOpeningHours?.weekdayDescriptions || p.regularOpeningHours?.weekdayDescriptions || []).join('\n') || null
+  })).filter(p => p.name && Number.isFinite(p.lat) && Number.isFinite(p.lng));
 }
 
 async function fromOSM(cat, lat, lng) {
@@ -43,11 +46,11 @@ async function fromOSM(cat, lat, lng) {
       if (!r.ok) { lastErr = `${url} -> ${r.status}`; continue; }
       const j = await r.json();
       return (j.elements || []).map((e) => ({
-        name: e.tags?.name, lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon,
+        id: `osm:${e.type}:${e.id}`, name: e.tags?.name, lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon,
         kind: (e.tags?.cuisine || e.tags?.amenity || e.tags?.shop || e.tags?.tourism || "").replace(/_/g, " "),
         rating: null, reviews: null, openNow: null,
         hours: e.tags?.opening_hours || null,
-      })).filter((p) => p.name && p.lat);
+      })).filter((p) => p.name && Number.isFinite(p.lat) && Number.isFinite(p.lng));
     } catch (e) { lastErr = `${url} -> ${e.message}`; }
   }
   throw new Error(lastErr);
@@ -55,12 +58,12 @@ async function fromOSM(cat, lat, lng) {
 
 module.exports = async (req, res) => {
   const cat = req.query.cat, lat = Number(req.query.lat), lng = Number(req.query.lng);
-  if (!OSM[cat] || !isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: "bad request" });
+  if (!OSM[cat] || !isFinite(lat) || !isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180 || !req.query.lat?.trim() || !req.query.lng?.trim()) return res.status(400).json({ error: "bad request" });
   const key = process.env.GOOGLE_API_KEY;
   try {
     let places = key ? await fromGoogle(cat, lat, lng, key) : await fromOSM(cat, lat, lng);
     places = places.map((p) => ({ ...p, dist: Math.round(haversine(lat, lng, p.lat, p.lng)) })).sort((a, b) => a.dist - b.dist).slice(0, 15);
-    res.setHeader("Cache-Control", "s-maxage=180");
+    res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ source: key ? "google" : "osm", places });
-  } catch (e) { res.status(502).json({ error: e.message }); }
+  } catch (e) { res.status(502).json({ error: "Place provider unavailable. Check server configuration or retry later." }); }
 };

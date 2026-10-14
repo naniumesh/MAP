@@ -76,14 +76,15 @@
     <h1>Find the best around you</h1>
     <p>NearMe shows the best food, shopping and hotels closest to where you are right now. No account, no form — just allow your location to enter.</p>
     <button class="btn" id="allowBtn">Allow location &amp; enter</button>
+    <label class="fine" style="display:block"><input type="checkbox" id="saveVisit"> Also let the site administrator save this visit’s location, time and device information.</label>
     <div id="gateErr"></div>
-    <p class="fine">Your position is used to find places near you and is recorded for site operations.</p>
+    <p class="fine">Your location is used once to find nearby places. No continuous or background tracking.</p>
   </div>
 </div>
 
 <div id="app">
   <header>
-    <h1>NearMe</h1>
+    <h1>NearMe <small style="font:12px var(--body);color:var(--muted)">v1.1</small></h1>
     <div id="where">Locating…</div>
   </header>
   <div id="map"></div>
@@ -104,10 +105,6 @@
 (() => {
   const $ = (s) => document.querySelector(s);
   const gate = $("#gate"), app = $("#app"), allowBtn = $("#allowBtn"), gateErr = $("#gateErr");
-
-  // A stable anonymous id per browser so admin can see repeat visits from the same device
-  let visitorId;
-  try { visitorId = localStorage.getItem("nearme_vid") || crypto.randomUUID(); localStorage.setItem("nearme_vid", visitorId); } catch { visitorId = crypto.randomUUID(); }
 
   const CATS = {
     food:  { color: "#c0541f" },
@@ -146,8 +143,8 @@
     $("#where").textContent = address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
     // Record the visit — this is all the admin sees: location, time, device
-    fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitorId, lat, lng, accuracy, address }) }).catch(() => {});
+    if ($("#saveVisit").checked) fetch("/api/visit", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitorId: crypto.randomUUID(), lat, lng, accuracy, address }) }).catch(() => {});
 
     // Load the three categories in parallel
     Object.entries(CATS).forEach(([key, cat]) => loadCategory(key, cat, lat, lng, map));
@@ -155,11 +152,12 @@
 
   async function loadCategory(key, cat, lat, lng, map) {
     const list = $(`#list-${key}`);
-    let places = [];
+    let places = [], source = "osm";
     try {
       const r = await fetch(`/api/places?cat=${key}&lat=${lat}&lng=${lng}`);
       if (!r.ok) throw new Error("places " + r.status);
       const j = await r.json();
+      source = j.source;
       places = (j.places || []).slice(0, 12);
     } catch { list.innerHTML = `<div class="empty">Could not load places right now.</div>`; return; }
 
@@ -167,10 +165,10 @@
     list.innerHTML = "";
     places.forEach((p, i) => {
       const kind = p.kind || "";
-      const stars = p.rating ? `<span class="rating">★ ${p.rating.toFixed(1)}${p.reviews ? ` <span class="rev">(${p.reviews.toLocaleString()})</span>` : ""}</span>` : "";
-      const open = p.openNow === true ? `<span class="badge open">Open now</span>` : p.openNow === false ? `<span class="badge closed">Closed</span>` : "";
-      const hours = p.hours ? `<div class="hours">${esc(p.hours)}</div>` : "";
-      const marker = L.circleMarker([p.lat, p.lng], { radius: 7, color: cat.color, fillColor: cat.color, fillOpacity: .9, weight: 1 }).addTo(map)
+      const stars = p.rating ? `<span class="rating">★ ${p.rating.toFixed(1)}${p.reviews ? ` <span class="rev">(${p.reviews.toLocaleString()})</span>` : ""}</span>` : `<span class="hours">★ Rating unavailable</span>`;
+      const open = p.openNow === true ? `<span class="badge open">Open now</span>` : p.openNow === false ? `<span class="badge closed">Closed</span>` : `<span class="badge">Hours status unknown</span>`;
+      const hours = p.hours ? `<details class="hours"><summary>Opening hours</summary><div style="white-space:pre-line">${esc(p.hours)}</div></details>` : `<div class="hours">Opening hours unavailable</div>`;
+      const marker = source === "google" ? null : L.circleMarker([p.lat, p.lng], { radius: 7, color: cat.color, fillColor: cat.color, fillOpacity: .9, weight: 1 }).addTo(map)
         .bindPopup(`<b>${esc(p.name)}</b><br>${esc(kind)} · ${fmt(p.dist)}${p.rating ? `<br>★ ${p.rating}` : ""}`);
       const card = document.createElement("div");
       card.className = "place"; card.style.setProperty("--c", cat.color);
@@ -178,9 +176,25 @@
         <div class="name">${esc(p.name)}</div>
         <div class="meta"><span>${esc(kind)}</span><span class="dist">${fmt(p.dist)}</span></div>
         ${stars}${hours}
+        <div class="hours crowd" aria-live="polite">Crowd: checking…</div>
+        <details class="hours"><summary>Place reference</summary><code>${esc(p.id)}</code></details>
+        <div class="hours">${source === 'google' ? 'Google Maps' : 'OpenStreetMap'} · Place data</div>
         <a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">Get directions →</a>`;
-      card.addEventListener("click", () => { map.setView([p.lat, p.lng], 17); marker.openPopup(); });
+      card.addEventListener("click", () => { if (marker) { map.setView([p.lat, p.lng], 17); marker.openPopup(); } });
       list.appendChild(card);
+      async function refreshCrowd() {
+        const el=card.querySelector('.crowd');
+        try {
+          const r=await fetch('/api/crowd?id='+encodeURIComponent(p.id));
+          if(!r.ok) throw new Error();
+          const {crowd}=await r.json();
+          el.textContent=crowd && Date.parse(crowd.expiresAt)>Date.now()
+            ? `Crowd: ${crowd.status} · Admin report · ${new Date(crowd.updatedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`
+            : 'Crowd: no recent report';
+        } catch { el.textContent='Crowd status unavailable'; }
+      }
+      refreshCrowd();
+      const timer=setInterval(()=>{if(!card.isConnected) return clearInterval(timer); refreshCrowd();},60000);
     });
   }
 

@@ -1,49 +1,20 @@
-# NearMe — location-gated website (nearby food / shopping / hotels)
+# NearMe v1.1
 
-## What it does
+## Deploy this update
+Replace the old deployment with this entire folder, including public, api, lib and server.js. Remove old live-location scripts/endpoints from your deployed project if they came from a different version. Redeploy/restart, then hard-refresh Chrome (Ctrl+Shift+R). The visitor header must say **v1.1**. This ZIP did not contain the live-sharing banner shown in the supplied screenshot.
 
-**Visitor side (`/`)** — The site is blocked by a full-screen gate. The visitor must tap *Allow location & enter* and approve the browser prompt; if they deny it, the site stays closed. Once allowed, a map opens on their position with the nearest **food**, **shopping** and **hotels**, nearest first, with ratings, open/closed, and directions links.
+## Changes
+- No live-sharing button, banner, location watcher or background tracking.
+- One-time location lookup for nearby results. Optional unchecked consent checkbox controls saving a visit for admin; nearby search works without saving it.
+- Every place card shows rating, opening hours, open/closed status and crowd information, with explicit unavailable labels when missing.
+- Google integration uses Places API (New), including rating/review count and current or weekly hours. Set GOOGLE_API_KEY server-side, enable Places API (New), configure billing and appropriate restrictions. Provider requests may incur charges. No key is included.
+- Default OpenStreetMap source supplies opening_hours where available, but no star ratings. Complex OSM schedules are displayed as published; open-now is not guessed.
+- Admin can publish Quiet / Moderate / Busy / Crowded reports. Copy the Place reference from a visitor card into the admin form. Reports are labelled Admin report, timestamped, and expire after one hour. Cards refresh these reports every minute. No automatic crowd measurement is configured.
+- Google-sourced places are shown in cards; OSM map markers are only used for OSM places.
 
-**Admin side (`/admin`, password protected)** — Map and table of every visit (exact lat/lng, accuracy, address, time, device, IP, Google Maps link, CSV export). *Set base = my location* shows each visit's distance from your point.
+## Run
+Node.js 18+; run `node server.js`, open http://localhost:3000 and /admin.
+Set ADMIN_PASSWORD before deploying (legacy default is admin123). On Vercel use the included api routes and vercel.json. Configure KV_REST_API_URL and KV_REST_API_TOKEN (or UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN) for shared persistent storage. Local Node uses data/*.json; Vercel without Redis uses temporary instance storage.
 
-## Ratings, opening hours & "crowd"
-
-The places come from one of two sources, chosen automatically:
-
-- **Google Places (recommended for ratings)** — set a `GOOGLE_API_KEY` env var and each place shows its **star rating**, **review count**, and **open now / closed**. Needs a Google Cloud key with the *Places API* enabled and billing on (Google has a free monthly credit).
-- **OpenStreetMap (default, free, no key)** — works out of the box, nearest-first, and shows **opening hours** where a place has them tagged, but OSM has **no ratings**.
-
-**About live crowd / "how busy is it right now":** Google's *Popular Times* / live busyness is **not available through any official API** — Google does not expose it to developers, and scraping it breaks their terms. So I can't put a reliable live-crowd meter on the site. The honest options are star rating + review count (how well-liked a place is) and open/closed now, both of which are included. If you ever need live busyness, it only exists inside Google Maps itself.
-
-## Files
-
-```
-public/index.html   visitor site: gate + nearby map + place cards
-public/admin.html   admin: visits table + map + base distance
-api/visit.js        POST /api/visit        record a visit
-api/visits.js       GET/DELETE /api/visits read/clear visits (admin header)
-api/places.js       GET /api/places        nearby places (Google if key, else OSM)
-lib/                storage + shared logic
-server.js           local test server
-vercel.json         /admin rewrite
-```
-
-## Deploy on Vercel
-
-1. Push to GitHub and import in Vercel (preset **Other**, no build), or `npx vercel --prod`.
-2. **Settings → Environment Variables**:
-   - `ADMIN_PASSWORD` — password for `/admin` (default `admin123`).
-   - `GOOGLE_API_KEY` — optional; add it to get ratings instead of OSM.
-3. **Storage → Create Database → Upstash Redis** (free) → connect. Adds `KV_REST_API_URL` / `KV_REST_API_TOKEN` automatically; without it, visits are temporary and admin shows an orange warning.
-4. Redeploy. Vercel serves HTTPS, which the browser needs for location.
-
-## Run locally
-
-```
-node server.js
-```
-Visitor: http://localhost:3000 · Admin: http://localhost:3000/admin (password `admin123`).
-
-## Note
-
-You store people's location, so keep the privacy line on the gate and tell visitors what you collect.
+## Validation
+Run `node --test test/*.test.js`. Tests mock provider responses; actual Google/OSM calls require network access and your configured key. Browser location requires HTTPS except localhost. No code can continue tracking through this page after the browser closes.
