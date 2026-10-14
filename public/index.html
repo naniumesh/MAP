@@ -54,6 +54,14 @@
   .place .dist { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--fg); }
   .place a { color: var(--c); font-weight: 600; font-size: .85rem; text-decoration: none; }
   .rank { font-size: .75rem; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .toprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rating { color: #d98324; font-weight: 700; font-size: .9rem; }
+  .rating .rev { color: var(--muted); font-weight: 500; }
+  .badge { font-size: .7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .badge.open { background: #e3f3e8; color: #1c6b3a; }
+  .badge.closed { background: #f6e3e3; color: #a33; }
+  @media (prefers-color-scheme: dark) { .badge.open { background: #173a26; color: #7fd6a0; } .badge.closed { background: #3a1d1d; color: #e79a9a; } }
+  .hours { font-size: .8rem; color: var(--muted); }
   .empty { color: var(--muted); padding: 10px 0; }
   .loading { color: var(--muted); }
   .leaflet-popup-content { font-family: var(--body); }
@@ -78,14 +86,6 @@
     <h1>NearMe</h1>
     <div id="where">Locating…</div>
   </header>
-  <div id="shareBar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px max(16px,env(safe-area-inset-left,0px));background:var(--card);border-bottom:1px solid var(--line)">
-    <button class="tab" id="shareBtn">📡 Share my live location</button>
-    <span id="shareState" style="color:var(--muted);font-size:.85rem"></span>
-  </div>
-  <div id="shareBanner" hidden style="background:#1c6b3a;color:#fff;padding:10px max(16px,env(safe-area-inset-left,0px));display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-weight:600">
-    <span>📡 You are sharing your live location. It updates while this page is open and stops when you close it.</span>
-    <button id="stopShareBtn" style="background:#fff;color:#1c6b3a;border:0;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer">Stop sharing</button>
-  </div>
   <div id="map"></div>
   <main>
     <div class="tabs" role="tablist">
@@ -160,19 +160,24 @@
       const r = await fetch(`/api/places?cat=${key}&lat=${lat}&lng=${lng}`);
       if (!r.ok) throw new Error("places " + r.status);
       const j = await r.json();
-      places = j.places.map((p) => ({ ...p, dist: haversine(lat, lng, p.lat, p.lng) })).sort((a, b) => a.dist - b.dist).slice(0, 12);
+      places = (j.places || []).slice(0, 12);
     } catch { list.innerHTML = `<div class="empty">Could not load places right now.</div>`; return; }
 
     if (!places.length) { list.innerHTML = `<div class="empty">Nothing found nearby.</div>`; return; }
     list.innerHTML = "";
     places.forEach((p, i) => {
       const kind = p.kind || "";
+      const stars = p.rating ? `<span class="rating">★ ${p.rating.toFixed(1)}${p.reviews ? ` <span class="rev">(${p.reviews.toLocaleString()})</span>` : ""}</span>` : "";
+      const open = p.openNow === true ? `<span class="badge open">Open now</span>` : p.openNow === false ? `<span class="badge closed">Closed</span>` : "";
+      const hours = p.hours ? `<div class="hours">${esc(p.hours)}</div>` : "";
       const marker = L.circleMarker([p.lat, p.lng], { radius: 7, color: cat.color, fillColor: cat.color, fillOpacity: .9, weight: 1 }).addTo(map)
-        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(kind)} · ${fmt(p.dist)}`);
+        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(kind)} · ${fmt(p.dist)}${p.rating ? `<br>★ ${p.rating}` : ""}`);
       const card = document.createElement("div");
       card.className = "place"; card.style.setProperty("--c", cat.color);
-      card.innerHTML = `<div class="rank">#${i + 1} nearest</div><div class="name">${esc(p.name)}</div>
-        <div class="meta"><span>${esc(kind.replace(/_/g, " "))}</span><span class="dist">${fmt(p.dist)}</span></div>
+      card.innerHTML = `<div class="toprow"><div class="rank">#${i + 1} nearest</div>${open}</div>
+        <div class="name">${esc(p.name)}</div>
+        <div class="meta"><span>${esc(kind)}</span><span class="dist">${fmt(p.dist)}</span></div>
+        ${stars}${hours}
         <a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}" target="_blank" rel="noopener">Get directions →</a>`;
       card.addEventListener("click", () => { map.setView([p.lat, p.lng], 17); marker.openPopup(); });
       list.appendChild(card);
@@ -190,37 +195,6 @@
   function fmt(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`; }
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
-  // --- Opt-in live location sharing (the person always sees it is on, and can stop) ---
-  let watchId = null;
-  const shareBtn = $("#shareBtn"), stopBtn = $("#stopShareBtn"), banner = $("#shareBanner"), shareState = $("#shareState");
-  function pushLive(lat, lng, accuracy) {
-    let name = "";
-    try { name = localStorage.getItem("nearme_name") || ""; } catch {}
-    fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitorId, name, lat, lng, accuracy, sharing: true }) }).catch(() => {});
-  }
-  function startShare() {
-    if (!navigator.geolocation) return;
-    let name = "";
-    try { name = localStorage.getItem("nearme_name") || ""; } catch {}
-    if (!name) {
-      name = (window.prompt("Your name (shown to whoever you share with). Leave blank to stay unnamed:") || "").trim();
-      try { if (name) localStorage.setItem("nearme_name", name); } catch {}
-    }
-    banner.hidden = false; shareBtn.disabled = true; shareState.textContent = "Live sharing is ON";
-    watchId = navigator.geolocation.watchPosition(
-      (pos) => pushLive(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
-      () => {}, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
-  }
-  function stopShare() {
-    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-    banner.hidden = true; shareBtn.disabled = false; shareState.textContent = "";
-    fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitorId, sharing: false }) }).catch(() => {});
-  }
-  shareBtn.addEventListener("click", startShare);
-  stopBtn.addEventListener("click", stopShare);
-  window.addEventListener("pagehide", () => { if (watchId !== null) navigator.sendBeacon?.("/api/live", new Blob([JSON.stringify({ visitorId, sharing: false })], { type: "application/json" })); });
 })();
 </script>
 </body>

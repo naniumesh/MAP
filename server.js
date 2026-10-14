@@ -4,8 +4,6 @@ const fs = require("fs");
 const path = require("path");
 const { recordVisit, adminVisits } = require("./lib/handlers");
 const places = require("./api/places");
-const live = require("./api/live");
-const liveView = require("./api/live-view");
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -22,15 +20,6 @@ http.createServer(async (req, res) => {
       req.query = Object.fromEntries(url.searchParams);
       res.status = (c) => { res.statusCode = c; return res; }; res.json = (b) => send(res, res.statusCode, b);
       return places(req, res);
-    }
-    if (url.pathname === "/api/live" && req.method === "POST") {
-      req.body = await readBody(req);
-      res.status = (c) => { res.statusCode = c; return res; }; res.json = (b) => send(res, res.statusCode, b);
-      return live(req, res);
-    }
-    if (url.pathname === "/api/live-view") {
-      res.status = (c) => { res.statusCode = c; return res; }; res.setHeader = () => {}; res.json = (b) => send(res, res.statusCode, b);
-      return liveView(req, res);
     }
     if (url.pathname === "/api/visits") { const o = await adminVisits(req); return send(res, o.status, o.body); }
   } catch (e) { return send(res, 500, { error: e.message }); }
